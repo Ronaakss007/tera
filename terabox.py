@@ -1851,282 +1851,135 @@ async def handle_message(client: Client, message: Message):
             except Exception as e:
                 logger.error(f"Error updating status: {e}")
 
-    # Replace your existing upload_progress function with this enhanced version
     async def upload_progress(current, total):
-        nonlocal last_update_time
-        current_time = time.time()
-        if current_time - last_update_time >= UPDATE_INTERVAL:
-            try:
-                progress = (current / total) * 100
-                elapsed_time = datetime.now() - start_time
-                elapsed_seconds = elapsed_time.total_seconds()
-                
-                if elapsed_seconds > 0:
-                    speed = current / elapsed_seconds
-                    eta_seconds = (total - current) / speed if speed > 0 else 0
-                    eta_minutes, eta_seconds = divmod(int(eta_seconds), 60)
-                    eta_hours, eta_minutes = divmod(eta_minutes, 60)
-                    
-                    if eta_hours > 0:
-                        eta_str = f"{eta_hours}h {eta_minutes}m"
-                    elif eta_minutes > 0:
-                        eta_str = f"{eta_minutes}m {int(eta_seconds)}s"
-                    else:
-                        eta_str = f"{int(eta_seconds)}s"
-                else:
-                    speed = 0
-                    eta_str = "Calculating..."
-                
-                elapsed_minutes, elapsed_seconds = divmod(elapsed_time.seconds, 60)
-                
-                # Detect file type for emoji
-                file_type = detect_file_type(file_path)
-                type_emoji = {
-                    'video': '🎬',
-                    'audio': '🎵',
-                    'photo': '🖼️',
-                    'document': '📄'
-                }.get(file_type, '📄')
-                
-                status_text = (
-                    f"{type_emoji} <b>Uploading {file_type.title()}</b>\n\n"
-                    f"📁 <b>File:</b> <code>{file_name}</code>\n"
-                    f"📊 <b>Progress:</b> [{'█' * int(progress / 5)}{'░' * (20 - int(progress / 5))}] <code>{progress:.1f}%</code>\n"
-                    f"📦 <b>Size:</b> <code>{format_size(current)}</code> / <code>{format_size(total)}</code>\n"
-                    f"⚡ <b>Speed:</b> <code>{format_size(speed)}/s</code>\n"
-                    f"⏱️ <b>ETA:</b> <code>{eta_str}</code>\n"
-                    f"🕐 <b>Elapsed:</b> <code>{elapsed_minutes}m {elapsed_seconds}s</code>\n"
-                    f"👤 <b>User:</b> <a href='tg://user?id={user_id}'>{message.from_user.first_name}</a>"
-                )
-                await update_status(status_message, status_text)
-                last_update_time = current_time
-            except Exception as e:
-                logger.error(f"Error updating progress: {e}")
+        progress = (current / total) if total else 0
+        percent = progress * 100
+        elapsed_time = datetime.now() - start_time
+        elapsed_minutes, elapsed_seconds = divmod(elapsed_time.seconds, 60)
 
-    # Add these helper functions before split_video_with_ffmpeg
-    def detect_file_type(file_path):
-        """Detect file type based on extension"""
-        ext = os.path.splitext(file_path)[1].lower()
-        
-        video_extensions = {'.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.3gp', '.mpeg', '.mpg'}
-        audio_extensions = {'.mp3', '.wav', '.flac', '.aac', '.ogg', '.m4a', '.wma', '.opus'}
-        image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.svg'}
-        
-        if ext in video_extensions:
-            return 'video'
-        elif ext in audio_extensions:
-            return 'audio'
-        elif ext in image_extensions:
-            return 'photo'
-        else:
-            return 'document'
+        # Emoji progress bar (10 blocks)
+        bar = "★" * int(progress * 10) + "☆" * (10 - int(progress * 10))
 
-    async def generate_thumbnail(video_path, thumbnail_path):
-        """Generate thumbnail for video"""
-        try:
-            def generate_thumb_sync():
-                try:
-                    (
-                        ffmpeg
-                        .input(video_path, ss=10)  # Take screenshot at 10 seconds
-                        .output(thumbnail_path, vframes=1, format='image2', vcodec='mjpeg')
-                        .overwrite_output()
-                        .run(capture_stdout=True, capture_stderr=True)
-                    )
-                    return thumbnail_path if os.path.exists(thumbnail_path) else None
-                except Exception as e:
-                    logger.error(f"Thumbnail generation failed: {e}")
-                    return None
-                       
-            # Run in thread pool to avoid blocking
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(None, generate_thumb_sync)
-            return result
-                   
-        except Exception as e:
-            logger.error(f"Error generating thumbnail: {e}")
-            return None
+        status_text = (
+            f"📤 <b>Uᴘʟᴏᴀᴅɪɴɢ</b>: <code>{file_name}</code>\n\n"
+            f"{bar} <code>{percent:.2f}%</code>\n"
+            f"🗂️ <b>Dᴏɴᴇ:</b> <code>{format_size(current)}</code> / <code>{format_size(total)}</code>\n"
+            f"⚡ <b>Sᴛᴀᴛᴜꜱ:</b> Uᴘʟᴏᴀᴅɪɴɢ ᴛᴏ Tᴇʟᴇɢʀᴀᴍ...\n"
+            f"🚀 <b>Sᴘᴇᴇᴅ:</b> <code>{format_size(current / (elapsed_time.total_seconds() or 1))}/s</code>\n"
+            f"⏱️ <b>Tɪᴍᴇ:</b> {elapsed_minutes}m {elapsed_seconds}s ᴇʟᴀᴘsᴇᴅ\n"
+            f"👤 <b>Uꜱᴇʀ:</b> <a href='tg://user?id={user_id}'>{message.from_user.first_name}</a> | <code>{user_id}</code>\n"
+        )
+        await update_status(status_message, status_text)
 
-    async def get_enhanced_video_info(video_path):
-        """Get enhanced video information"""
-        try:
-            def get_info_sync():
-                try:
-                    probe = ffmpeg.probe(video_path)
-                    video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
-                    
-                    if video_stream:
-                        width = int(video_stream.get('width', 0))
-                        height = int(video_stream.get('height', 0))
-                        duration = int(float(video_stream.get('duration', 0)))
-                        return duration, width, height
-                    return 0, 0, 0
-                except Exception as e:
-                    logger.error(f"Error getting video info: {e}")
-                    return 0, 0, 0
-            
-            loop = asyncio.get_event_loop()
-            return await loop.run_in_executor(None, get_info_sync)
-        except Exception as e:
-            logger.error(f"Error in get_enhanced_video_info: {e}")
-            return 0, 0, 0
-
-    async def get_audio_duration(audio_path):
-        """Get audio duration"""
-        try:
-            def get_duration_sync():
-                try:
-                    probe = ffmpeg.probe(audio_path)
-                    audio_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'audio'), None)
-                    
-                    if audio_stream:
-                        duration = int(float(audio_stream.get('duration', 0)))
-                        return duration
-                    return 0
-                except Exception as e:
-                    logger.error(f"Error getting audio duration: {e}")
-                    return 0
-            
-            loop = asyncio.get_event_loop()
-            return await loop.run_in_executor(None, get_duration_sync)
-        except Exception as e:
-            logger.error(f"Error in get_audio_duration: {e}")
-            return 0
     async def split_video_with_ffmpeg(input_path, output_prefix, split_size):
+        """
+        Split a video or file into multiple parts if it exceeds split_size.
+        Returns a list of split file paths.
+        """
         try:
             original_ext = os.path.splitext(input_path)[1].lower() or '.mp4'
-            start_time = datetime.now()
-            last_progress_update = time.time()
-            
-            proc = await asyncio.create_subprocess_exec(
-                'ffprobe', '-v', 'error', '-show_entries', 'format=duration',
-                '-of', 'default=noprint_wrappers=1:nokey=1', input_path,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, _ = await proc.communicate()
-            total_duration = float(stdout.decode().strip())
-            
             file_size = os.path.getsize(input_path)
-            parts = math.ceil(file_size / split_size)
-            
-            if parts == 1:
+            if file_size <= split_size:
                 return [input_path]
-            
-            duration_per_part = total_duration / parts
+
+            # Calculate number of parts
+            parts = math.ceil(file_size / split_size)
             split_files = []
-            
-            for i in range(parts):
-                current_time = time.time()
-                if current_time - last_progress_update >= UPDATE_INTERVAL:
-                    elapsed = datetime.now() - start_time
-                    progress_percent = (i / parts) * 100
-                    status_text = (
-                        f"✂️ <b>Splitting Video</b>\n\n"
-                        f"📁 <b>File:</b> <code>{os.path.basename(input_path)}</code>\n"
-                        f"🧩 <b>Creating Part:</b> {i+1}/{parts}\n"
-                        f"📊 <b>Progress:</b> [{'█' * int(progress_percent / 5)}{'░' * (20 - int(progress_percent / 5))}] <code>{progress_percent:.1f}%</code>\n"
-                        f"⏱️ <b>Elapsed:</b> {elapsed.seconds // 60}m {elapsed.seconds % 60}s"
-                    )
-                    await update_status(status_message, status_text)
-                    last_progress_update = current_time
-                
-                output_path = f"{output_prefix}.part{i+1:03d}{original_ext}"
-                cmd = [
-                    'ffmpeg', '-y', '-ss', str(i * duration_per_part),
-                    '-i', input_path, '-t', str(duration_per_part),
-                    '-c', 'copy', '-map', '0',
-                    '-metadata:s:v', 'rotate=0',
-                    '-avoid_negative_ts', 'make_zero',
-                    '-threads', '4',
-                    output_path
-                ]
-                
+
+            # If it's a video, split by duration using ffmpeg
+            try:
+                # Get total duration (in seconds)
                 proc = await asyncio.create_subprocess_exec(
-                    *cmd,
+                    'ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+                    '-of', 'default=noprint_wrappers=1:nokey=1', input_path,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE
                 )
-                await proc.wait()
-                
-                if os.path.exists(output_path):
+                stdout, _ = await proc.communicate()
+                total_duration = float(stdout.decode().strip())
+                duration_per_part = total_duration / parts
+                for i in range(parts):
+                    output_path = f"{output_prefix}.{i+1:03d}{original_ext}"
+                    cmd = [
+                        'ffmpeg', '-y', '-ss', str(i * duration_per_part),
+                        '-i', input_path, '-t', str(duration_per_part),
+                        '-c', 'copy', '-map', '0',
+                        output_path
+                    ]
+                    proc = await asyncio.create_subprocess_exec(*cmd)
+                    await proc.wait()
                     split_files.append(output_path)
-                else:
-                    logger.error(f"Failed to create part {i+1}")
-            
+                return split_files
+            except Exception as e:
+                logger.warning(f"ffprobe/ffmpeg failed, fallback to binary split: {e}")
+
+            # Fallback: binary split for non-video files or ffmpeg failure
+            async with aiofiles.open(input_path, "rb") as f:
+                for i in range(parts):
+                    output_path = f"{output_prefix}.{i+1:03d}{original_ext}"
+                    async with aiofiles.open(output_path, "wb") as out:
+                        to_write = min(split_size, file_size - (i * split_size))
+                        written = 0
+                        while written < to_write:
+                            chunk = await f.read(min(1024 * 1024, to_write - written))
+                            if not chunk:
+                                break
+                            await out.write(chunk)
+                            written += len(chunk)
+                    split_files.append(output_path)
             return split_files
         except Exception as e:
-            logger.error(f"Enhanced split error: {e}")
+            logger.error(f"Split error: {e}")
             raise
+
     async def handle_upload():
         global download_count, total_download_size
         file_size = os.path.getsize(file_path)
         part_caption = caption
 
-        # Enhanced file type detection
-        file_type = detect_file_type(file_path)
-        is_video = file_type == 'video'
-        is_audio = file_type == 'audio'
-        is_image = file_type == 'photo'
-        is_document = file_type == 'document'
-        
+        # Detect file type
+        ext = os.path.splitext(file_path)[1].lower()
+        is_video = ext in (".m4v", ".mp4", ".mov", ".flv", ".wmv", ".3gp", ".mpeg", ".webm", ".mkv")
+        is_audio = ext in (".mp3", ".wav", ".ogg", ".flac", ".aac", ".m4a")
+        is_image = ext in (".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff")
         thumb_path = None
         duration, width, height = 0, 0, 0
 
-        # Get metadata based on file type
+        # Try to get video metadata if video
         if is_video:
             try:
-                duration, width, height = await get_enhanced_video_info(file_path)
-                # Generate thumbnail for video
-                thumb_path = f"/tmp/terabox_thumb_{user_id}_{int(time.time())}.jpg"
-                generated_thumb = await generate_thumbnail(file_path, thumb_path)
-                if not generated_thumb and thumb_url:
-                    # Fallback to download thumbnail from URL
-                    await download_thumbnail(thumb_url, thumb_path)
+                metadata = ffmpeg.probe(file_path)["streams"]
+                for meta in metadata:
+                    if not height:
+                        height = int(meta.get("height", 0))
+                    if not width:
+                        width = int(meta.get("width", 0))
+                    if not duration:
+                        duration = int(float(meta.get("duration", 0)))
             except Exception as e:
                 logger.error(f"Error getting video metadata: {e}")
 
-        elif is_audio:
+        # Try to get audio duration if audio
+        if is_audio and not duration:
             try:
-                duration = await get_audio_duration(file_path)
-                # Download thumbnail for audio if available
-                if thumb_url:
-                    thumb_path = f"/tmp/terabox_thumb_{user_id}_{int(time.time())}.jpg"
-                    await download_thumbnail(thumb_url, thumb_path)
+                metadata = ffmpeg.probe(file_path)["streams"]
+                for meta in metadata:
+                    if meta.get("codec_type") == "audio" and not duration:
+                        duration = int(float(meta.get("duration", 0)))
             except Exception as e:
                 logger.error(f"Error getting audio metadata: {e}")
 
-        elif thumb_url and (is_document or is_image):
-            # Download thumbnail for documents if available
-            thumb_path = f"/tmp/terabox_thumb_{user_id}_{int(time.time())}.jpg"
+        # Prepare thumbnail if available
+        if thumb_url:
+            thumb_path = f"/tmp/terabox_thumb_{user_id}.jpg"
             await download_thumbnail(thumb_url, thumb_path)
 
-        # Enhanced caption with file type info
-        type_emoji = {
-            'video': '🎬',
-            'audio': '🎵',
-            'photo': '🖼️',
-            'document': '📄'
-        }.get(file_type, '📄')
-        
-        enhanced_caption = f"{type_emoji} <b>{file_name}</b>\n"
-        enhanced_caption += f"📦 <b>Size:</b> <code>{format_size(file_size)}</code>\n"
-        
-        if duration > 0:
-            duration_str = f"{duration // 60}:{duration % 60:02d}"
-            enhanced_caption += f"⏱️ <b>Duration:</b> <code>{duration_str}</code>\n"
-        
-        enhanced_caption += f"👤 <b>User:</b> <a href='tg://user?id={user_id}'>{message.from_user.first_name}</a>"
-        
-        part_caption = enhanced_caption
-        # Split large files (only videos)
+        # Split large files
         SPLIT_SIZE = 2097152000
         if file_size > SPLIT_SIZE and is_video:
             await update_status(
                 status_message,
-                f"✂️ <b>Splitting large video...</b>\n\n"
-                f"📁 <b>File:</b> <code>{file_name}</code>\n"
-                f"📦 <b>Size:</b> <code>{format_size(file_size)}</code>"
+                f"✂️ Sᴘʟɪᴛᴛɪɴɢ  {file_name} ({format_size(file_size)})"
             )
             split_files = await split_video_with_ffmpeg(
                 file_path,
@@ -2134,200 +1987,152 @@ async def handle_message(client: Client, message: Message):
                 SPLIT_SIZE
             )
             try:
-                total_parts = len(split_files)
                 for i, part in enumerate(split_files):
-                    part_name = os.path.basename(part)
-                    part_caption = f"{enhanced_caption}\n\n📦 <b>Part {i+1}/{total_parts}</b>"
-                    
-                    # Update status for current part
+                    part_caption = f"{caption}\n\nPart {i+1}/{len(split_files)}"
+                    split_progress = (i + 1) / len(split_files)
+                    split_bar = "★" * int(split_progress * 10) + "☆" * (10 - int(split_progress * 10))
                     await update_status(
                         status_message,
-                        f"📤 <b>Uploading Part {i+1}/{total_parts}</b>\n\n"
-                        f"📁 <b>File:</b> <code>{part_name}</code>\n"
-                        f"📦 <b>Size:</b> <code>{format_size(os.path.getsize(part))}</code>\n"
-                        f"✅ <b>Completed:</b> {i}/{total_parts}"
+                        f"✂️ <b>Sᴘʟɪᴛᴛɪɴɢ & Uᴘʟᴏᴀᴅɪɴɢ</b>\n\n"
+                        f"{split_bar} <code>{split_progress*100:.2f}%</code>\n"
+                        f"📤 <b>Uᴘʟᴏᴀᴅɪɴɢ Pᴀʀᴛ</b> {i+1}/{len(split_files)}\n"
+                        f"📁 <b>Fɪʟᴇ:</b> <code>{os.path.basename(part)}</code>"
+                        f"📦 <b>Sɪᴢᴇ:</b> {format_size(os.path.getsize(part))}"
                     )
-                    
-                    # Get video info for this part
-                    part_duration, part_width, part_height = await get_enhanced_video_info(part)
-                    
-                    # Generate thumbnail for first part or use existing
-                    part_thumb = None
-                    if i == 0 and thumb_path:
-                        part_thumb = thumb_path
-                    elif i > 0:
-                        part_thumb = f"/tmp/thumb_part_{user_id}_{i}.jpg"
-                        part_thumb = await generate_thumbnail(part, part_thumb)
-                    
-                    # Upload video part to dump channels
+                    duration, width, height = await get_video_info(part)
                     if USER_SESSION_STRING:
                         sent = await user.send_video(
                             DUMP_CHAT_IDS[0], part, 
                             caption=part_caption,
                             reply_markup=caption_btn,
                             progress=upload_progress,
-                            file_name=part_name,
+                            file_name=os.path.basename(part),
                             supports_streaming=True,
-                            width=part_width,
-                            height=part_height,
-                            duration=part_duration,
-                            thumb=part_thumb if part_thumb else None,
+                            width=width,
+                            height=height,
+                            duration=duration,
+                            thumb=thumb_path if thumb_path else None,
                             disable_notification=True,
                             has_spoiler=True,
+                            # request_timeout=3600
                         )
-                        # Copy to other dump channels
-                        sent_msgs = [sent]
-                        for dump_id in DUMP_CHAT_IDS[1:]:
+                        # Send to all dump channels and collect sent messages
+                        sent_msgs = []
+                        for dump_id in DUMP_CHAT_IDS:
                             try:
-                                copied = await app.copy_message(
-                                    dump_id, sent.chat.id, sent.id
+                                sent_msg = await client.send_video(
+                                    dump_id, part,
+                                    caption=part_caption,
+                                    reply_markup=caption_btn,
+                                    progress=upload_progress,
+                                    width=width,
+                                    height=height,
+                                    thumb=thumb_path if thumb_path else None,
+                                    duration=duration,
+                                    has_spoiler=True,
                                 )
-                                sent_msgs.append(copied)
+                                sent_msgs.append(sent_msg)
                             except Exception as e:
-                                logger.error(f"Failed to copy to dump channel {dump_id}: {e}")
-                        
-                        # Forward to user from the first successful dump channel
+                                logger.error(f"Failed to send to dump channel {dump_id}: {e}")
+                        # Forward/copy to user from the first successful dump channel
                         if sent_msgs:
                             await app.copy_message(
-                                message.chat.id, sent_msgs[0].chat.id, sent_msgs[0].id
+                                message.chat.id,DUMP_CHAT_IDS[0], sent_msgs[0].chat.id, sent_msgs[0].id
                             )
                         else:
                             # Fallback: send directly to user if all dump channels failed
-                            await app.send_video(
+                            await client.send_video(
                                 message.chat.id, part,
                                 caption=part_caption,
                                 reply_markup=caption_btn,
-                                width=part_width,
-                                height=part_height,
-                                thumb=part_thumb if part_thumb else None,
-                                duration=part_duration,
+                                width=width,
+                                height=height,
+                                thumb=thumb_path if thumb_path else None,
+                                duration=duration,
                                 has_spoiler=True,
-                                supports_streaming=True,
                             )
-                    else:
-                        # Bot upload for parts
-                        sent = await app.send_video(
-                            DUMP_CHAT_IDS[0], part,
+                        await client.send_video(
+                            message.chat.id, sent.video.file_id,
+                            caption=part_caption,
+                            reply_markup=caption_btn,
+                            width=width,
+                            height=height,
+                            duration=duration,
+                            has_spoiler=True,
+                            thumb=thumb_path if thumb_path else None,
+                        )
+                    os.remove(part)
+            finally:
+                for part in split_files:
+                    try: os.remove(part)
+                    except: pass
+        else:
+            await update_status(
+                status_message,
+                f"📤 Uᴘʟᴏᴀᴅɪɴɢ  {file_name}\n"
+                f"Size: {format_size(file_size)}"
+            )
+            # Upload logic for all file types
+            try:
+                if is_video:
+                    width, height = await get_video_dimensions(file_path)
+                    send_func = user.send_video if USER_SESSION_STRING else client.send_video
+                    try:
+                        sent = await send_func(
+                            DUMP_CHAT_IDS[0], file_path,
                             caption=part_caption,
                             reply_markup=caption_btn,
                             progress=upload_progress,
-                            width=part_width,
-                            height=part_height,
-                            duration=part_duration,
+                            width=width,
+                            height=height,
+                            duration=duration,
                             has_spoiler=True,
-                            thumb=part_thumb if part_thumb else None,
+                            thumb=thumb_path if thumb_path else None,
                             supports_streaming=True,
                         )
-                        
-                        # Copy to other dump channels
-                        for dump_id in DUMP_CHAT_IDS[1:]:
-                            try:
-                                await app.copy_message(dump_id, sent.chat.id, sent.id)
-                            except Exception as e:
-                                logger.error(f"Failed to copy to dump channel {dump_id}: {e}")
-                        
-                        # Copy to user
-                        await app.copy_message(message.chat.id, sent.chat.id, sent.id)
-                    
-                    # Cleanup part file and thumbnail
-                    if os.path.exists(part):
-                        os.remove(part)
-                    if part_thumb and part_thumb != thumb_path and os.path.exists(part_thumb):
-                        os.remove(part_thumb)
-                        
-            finally:
-                # Cleanup all remaining split files
-                for part in split_files:
-                    try:
-                        if os.path.exists(part):
-                            os.remove(part)
-                    except:
-                        pass
-        else:
-            # Single file upload with proper file type handling
-            await update_status(
-                status_message,
-                f"📤 <b>Uploading {file_type.title()}</b>\n\n"
-                f"📁 <b>File:</b> <code>{file_name}</code>\n"
-                f"📦 <b>Size:</b> <code>{format_size(file_size)}</code>"
-            )
-            
-            try:
-                if is_video:
-                    # Video upload
-                    send_func = user.send_video if USER_SESSION_STRING else app.send_video
-                    sent = await send_func(
-                        DUMP_CHAT_IDS[0], file_path,
-                        caption=part_caption,
-                        reply_markup=caption_btn,
-                        progress=upload_progress,
-                        width=width,
-                        height=height,
-                        duration=duration,
-                        has_spoiler=True,
-                        thumb=thumb_path if thumb_path else None,
-                        supports_streaming=True,
-                    )
-                    
-                elif is_audio:
-                    # Audio upload
-                    send_func = user.send_audio if USER_SESSION_STRING else app.send_audio
-                    sent = await send_func(
-                        DUMP_CHAT_IDS[0], file_path,
-                        caption=part_caption,
-                        reply_markup=caption_btn,
-                        progress=upload_progress,
-                        duration=duration,
-                        thumb=thumb_path if thumb_path else None,
-                        has_spoiler=True,
-                    )
-                    
-                elif is_image:
-                    # Photo upload
-                    send_func = user.send_photo if USER_SESSION_STRING else app.send_photo
-                    sent = await send_func(
-                        DUMP_CHAT_IDS[0], file_path,
-                        caption=part_caption,
-                        reply_markup=caption_btn,
-                        progress=upload_progress,
-                        has_spoiler=True,
-                    )
-                    
-                else:
-                    # Document upload
-                    send_func = user.send_document if USER_SESSION_STRING else app.send_document
-                    sent = await send_func(
-                        DUMP_CHAT_IDS[0], file_path,
-                        caption=part_caption,
-                        reply_markup=caption_btn,
-                        progress=upload_progress,
-                        file_name=file_name,
-                        thumb=thumb_path if thumb_path else None,
-                        has_spoiler=True,
-                    )
-                
-                # Copy to other dump channels
-                sent_msgs = [sent]
-                for dump_id in DUMP_CHAT_IDS[1:]:
-                    try:
-                        copied = await app.copy_message(
-                            dump_id, sent.chat.id, sent.id
-                        )
-                        sent_msgs.append(copied)
                     except Exception as e:
-                        logger.error(f"Failed to copy {file_type} to dump channel {dump_id}: {e}")
-                
-                # Forward to user from the first successful dump channel
-                if sent_msgs:
-                    try:
-                        await app.copy_message(
-                            message.chat.id, sent_msgs[0].chat.id, sent_msgs[0].id
+                        logger.error(f"Failed to upload to dump channel: {e}")
+                        # Fallback: upload directly to user if dump channel fails
+                        sent = await client.send_video(
+                            message.chat.id, file_path,
+                            caption=part_caption,
+                            reply_markup=caption_btn,
+                            width=width,
+                            height=height,
+                            duration=duration,
+                            has_spoiler=True,
+                            thumb=thumb_path if thumb_path else None,
+                            supports_streaming=True,
                         )
-                    except Exception as e:
-                        logger.error(f"Error copying {file_type} to user: {e}")
-                        # Fallback: send file directly to user
+                        # Clean up and skip forwarding/copying
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
+                        if thumb_path and os.path.exists(thumb_path):
+                            os.remove(thumb_path)
+                        return
+
+                    # Forward/copy to user
+                    if USER_SESSION_STRING:
                         try:
-                            if is_video:
+                            await app.copy_message(
+                                message.chat.id, DUMP_CHAT_IDS[0], sent.id
+                            )
+                        except Exception as e:
+                            logger.error(f"Error copying message: {e}")
+                            try:
+                                await app.send_video(
+                                    message.chat.id, sent.video.file_id,
+                                    caption=part_caption,
+                                    reply_markup=caption_btn,
+                                    width=width,
+                                    height=height,
+                                    duration=duration,
+                                    thumb=thumb_path if thumb_path else None,
+                                    has_spoiler=True,
+                                    supports_streaming=True,
+                                )
+                            except Exception as e2:
+                                logger.error(f"Error sending video: {e2}")
                                 await app.send_video(
                                     message.chat.id, file_path,
                                     caption=part_caption,
@@ -2339,112 +2144,233 @@ async def handle_message(client: Client, message: Message):
                                     thumb=thumb_path if thumb_path else None,
                                     supports_streaming=True,
                                 )
-                            elif is_audio:
-                                await app.send_audio(
-                                    message.chat.id, file_path,
-                                    caption=part_caption,
-                                    reply_markup=caption_btn,
-                                    duration=duration,
-                                    thumb=thumb_path if thumb_path else None,
-                                    has_spoiler=True,
-                                )
-                            elif is_image:
-                                await app.send_photo(
-                                    message.chat.id, file_path,
-                                    caption=part_caption,
-                                    reply_markup=caption_btn,
-                                    has_spoiler=True,
-                                )
-                            else:
-                                await app.send_document(
-                                    message.chat.id, file_path,
-                                    caption=part_caption,
-                                    reply_markup=caption_btn,
-                                    file_name=file_name,
-                                    thumb=thumb_path if thumb_path else None,
-                                    has_spoiler=True,
-                                )
-                        except Exception as e2:
-                            logger.error(f"Error sending {file_type} directly to user: {e2}")
-                else:
-                    # Fallback: upload directly to user if all dump channels failed
-                    logger.warning("All dump channels failed, uploading directly to user")
-                    if is_video:
-                        await app.send_video(
-                            message.chat.id, file_path,
-                            caption=part_caption,
-                            reply_markup=caption_btn,
-                            width=width,
-                            height=height,
-                            duration=duration,
-                            has_spoiler=True,
-                            thumb=thumb_path if thumb_path else None,
-                            supports_streaming=True,
-                        )
-                    elif is_audio:
-                        await app.send_audio(
-                            message.chat.id, file_path,
-                            caption=part_caption,
-                            reply_markup=caption_btn,
-                            duration=duration,
-                            thumb=thumb_path if thumb_path else None,
-                            has_spoiler=True,
-                        )
-                    elif is_image:
-                        await app.send_photo(
-                            message.chat.id, file_path,
-                            caption=part_caption,
-                            reply_markup=caption_btn,
-                            has_spoiler=True,
-                        )
                     else:
-                        await app.send_document(
+                        try:
+                            await client.send_video(
+                                message.chat.id, sent.video.file_id,
+                                caption=part_caption,
+                                reply_markup=caption_btn,
+                                width=width,
+                                height=height,
+                                duration=duration,
+                                has_spoiler=True,
+                                thumb=thumb_path if thumb_path else None,
+                                supports_streaming=True,
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to send video using file_id: {e}")
+                            await client.send_video(
+                                message.chat.id, file_path,
+                                caption=part_caption,
+                                reply_markup=caption_btn,
+                                width=width,
+                                height=height,
+                                duration=duration,
+                                has_spoiler=True,
+                                thumb=thumb_path if thumb_path else None,
+                                supports_streaming=True,
+                            )
+                elif is_audio:
+                    send_func = user.send_audio if USER_SESSION_STRING else client.send_audio
+                    try:
+                        sent = await send_func(
+                            DUMP_CHAT_IDS[0], file_path,
+                            caption=part_caption,
+                            reply_markup=caption_btn,
+                            progress=upload_progress,
+                            duration=duration,
+                            thumb=thumb_path if thumb_path else None,
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to upload audio to dump channel: {e}")
+                        sent = await client.send_audio(
+                            message.chat.id, file_path,
+                            caption=part_caption,
+                            reply_markup=caption_btn,
+                            duration=duration,
+                            thumb=thumb_path if thumb_path else None,
+                        )
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
+                        if thumb_path and os.path.exists(thumb_path):
+                            os.remove(thumb_path)
+                        return
+
+                    if USER_SESSION_STRING:
+                        try:
+                            await app.copy_message(
+                                message.chat.id, DUMP_CHAT_IDS[0], sent.id
+                            )
+                        except Exception as e:
+                            logger.error(f"Error copying audio: {e}")
+                            await app.send_audio(
+                                message.chat.id, file_path,
+                                caption=part_caption,
+                                reply_markup=caption_btn,
+                                duration=duration,
+                                thumb=thumb_path if thumb_path else None,
+                            )
+                    else:
+                        try:
+                            await client.send_audio(
+                                message.chat.id, sent.audio.file_id,
+                                caption=part_caption,
+                                reply_markup=caption_btn,
+                                duration=duration,
+                                thumb=thumb_path if thumb_path else None,
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to send audio using file_id: {e}")
+                            await client.send_audio(
+                                message.chat.id, file_path,
+                                caption=part_caption,
+                                reply_markup=caption_btn,
+                                duration=duration,
+                                thumb=thumb_path if thumb_path else None,
+                            )
+                elif is_image:
+                    send_func = user.send_photo if USER_SESSION_STRING else client.send_photo
+                    try:
+                        sent = await send_func(
+                            DUMP_CHAT_IDS[0], file_path,
+                            caption=part_caption,
+                            reply_markup=caption_btn,
+                            progress=upload_progress,
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to upload photo to dump channel: {e}")
+                        sent = await client.send_photo(
+                            message.chat.id, file_path,
+                            caption=part_caption,
+                            reply_markup=caption_btn,
+                        )
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
+                        if thumb_path and os.path.exists(thumb_path):
+                            os.remove(thumb_path)
+                        return
+
+                    if USER_SESSION_STRING:
+                        try:
+                            await app.copy_message(
+                                message.chat.id, DUMP_CHAT_IDS[0], sent.id
+                            )
+                        except Exception as e:
+                            logger.error(f"Error copying photo: {e}")
+                            await app.send_photo(
+                                message.chat.id, file_path,
+                                caption=part_caption,
+                                reply_markup=caption_btn,
+                            )
+                    else:
+                        try:
+                            await client.send_photo(
+                                message.chat.id, sent.photo.file_id,
+                                caption=part_caption,
+                                reply_markup=caption_btn,
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to send photo using file_id: {e}")
+                            await client.send_photo(
+                                message.chat.id, file_path,
+                                caption=part_caption,
+                                reply_markup=caption_btn,
+                            )
+                else:
+                    send_func = user.send_document if USER_SESSION_STRING else client.send_document
+                    try:
+                        sent = await send_func(
+                            DUMP_CHAT_IDS[0], file_path,
+                            caption=part_caption,
+                            reply_markup=caption_btn,
+                            progress=upload_progress,
+                            file_name=file_name,
+                            thumb=thumb_path if thumb_path else None,
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to upload document to dump channel: {e}")
+                        sent = await client.send_document(
                             message.chat.id, file_path,
                             caption=part_caption,
                             reply_markup=caption_btn,
                             file_name=file_name,
                             thumb=thumb_path if thumb_path else None,
-                            has_spoiler=True,
                         )
-                        
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
+                        if thumb_path and os.path.exists(thumb_path):
+                            os.remove(thumb_path)
+                        return
+
+                    if USER_SESSION_STRING:
+                        try:
+                            await app.copy_message(
+                                message.chat.id, DUMP_CHAT_IDS[0], sent.id
+                            )
+                        except Exception as e:
+                            logger.error(f"Error copying document: {e}")
+                            await app.send_document(
+                                message.chat.id, file_path,
+                                caption=part_caption,
+                                reply_markup=caption_btn,
+                                file_name=file_name,
+                                thumb=thumb_path if thumb_path else None,
+                            )
+                    else:
+                        try:
+                            await client.send_document(
+                                message.chat.id, sent.document.file_id,
+                                caption=part_caption,
+                                reply_markup=caption_btn,
+                                file_name=file_name,
+                                thumb=thumb_path if thumb_path else None,
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to send document using file_id: {e}")
+                            await client.send_document(
+                                message.chat.id, file_path,
+                                caption=part_caption,
+                                reply_markup=caption_btn,
+                                file_name=file_name,
+                                thumb=thumb_path if thumb_path else None,
+                            )
             except Exception as e:
-                logger.error(f"Failed to upload {file_type}: {e}")
-                await message.reply_text(f"❌ Failed to upload {file_type}.")
+                logger.error(f"Failed to upload file: {e}")
+                await message.reply_text("❌ Failed to upload file.")
 
-        # Cleanup files
-        if os.path.exists(file_path):
-            os.remove(file_path)
-        if thumb_path and os.path.exists(thumb_path):
-            os.remove(thumb_path)
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            if thumb_path and os.path.exists(thumb_path):
+                os.remove(thumb_path)
 
-        # Send completion message with file type info
-        completion_sticker = await message.reply_sticker("CAACAgUAAxkBAAEBOQVoBLWRUSRCieoGNbvQ5cJ1U8qtWgACKg0AAprJqVcDgujJs5TjwTYE")
-        
-        # Enhanced completion message
-        completion_text = (
-            f"✅ <b>{type_emoji} {file_type.title()} Upload Completed!</b>\n\n"
-            f"📁 <b>File:</b> <code>{file_name}</code>\n"
-            f"📦 <b>Size:</b> <code>{format_size(file_size)}</code>\n"
-        )
-        
-        if duration > 0:
-            duration_str = f"{duration // 60}:{duration % 60:02d}"
-            completion_text += f"⏱️ <b>Duration:</b> <code>{duration_str}</code>\n"
-        
-        upload_time = (datetime.now() - start_time).seconds
-        completion_text += (
-            f"🕐 <b>Upload Time:</b> <code>{upload_time}s</code>\n"
-            f"👤 <b>User:</b> <a href='tg://user?id={user_id}'>{message.from_user.first_name}</a>\n\n"
-            f"🎉 <b>Enjoy your {file_type}!</b> 😎"
-        )
-        
-        await message.reply_text(completion_text)
-        
-        # Update statistics
+        # Send as spoiler to channel with caption_btn
+        try:
+            await client.send_video(
+                DUMP_CHAT_IDS[0],
+                file_path,
+                caption=part_caption,
+                reply_markup=caption_btn,
+                width=width,
+                height=height,
+                duration=duration,
+                has_spoiler=True,
+                thumb=thumb_path if thumb_path else None,
+                supports_streaming=True,
+            )
+        except Exception as e:
+            logger.error(f"Failed to send spoiler video to channel: {e}")
+
+        # Send sticker and delete after 5 seconds
+        try:
+            sticker = await message.reply_sticker("CAACAgUAAxkBAAEBOQVoBLWRUSRCieoGNbvQ5cJ1U8qtWgACKg0AAprJqVcDgujJs5TjwTYE")
+            await asyncio.sleep(5)
+            await sticker.delete()
+        except Exception as e:
+            logger.error(f"Failed to send/delete sticker: {e}")
+        # await message.reply_text("✅ Uᴘʟᴏᴀᴅ ᴄᴏᴍᴘʟᴇᴛᴇᴅ! Eɴᴊᴏʏ ᴛʜᴇ ᴄᴏɴᴛᴇɴᴛ. 😎")
         download_count += 1
         total_download_size += file_size
 
-        # Update database stats
         db.get_collection("stats").update_one(  
            {"_id": "download_stats"},
            {
@@ -2460,85 +2386,15 @@ async def handle_message(client: Client, message: Message):
                 "$set": {"last_download": datetime.now()}
             }
         )
-
-    # Initialize the upload process
     start_time = datetime.now()
+    
     await handle_upload()
 
-    # Final cleanup
     try:
         await status_message.delete()
         await message.delete()
     except Exception as e:
-        logger.error(f"Cleanup error: {e}")
-
-# Add this function before the handle_upload function
-async def download_thumbnail(thumb_url, thumb_path):
-    """Download thumbnail from URL"""
-    try:
-        async with aiohttp.ClientSession(headers=my_headers, cookies=my_cookie) as session:
-            async with session.get(thumb_url) as resp:
-                if resp.status == 200:
-                    async with aiofiles.open(thumb_path, 'wb') as f:
-                        async for chunk in resp.content.iter_chunked(8192):
-                            await f.write(chunk)
-                    return thumb_path if os.path.exists(thumb_path) else None
-                else:
-                    logger.error(f"Failed to download thumbnail: HTTP {resp.status}")
-                    return None
-    except Exception as e:
-        logger.error(f"Error downloading thumbnail: {e}")
-        return None
-
-# Also add this enhanced get_video_dimensions function to replace the existing one
-async def get_video_dimensions(video_path):
-    """Get video dimensions using ffprobe"""
-    try:
-        def get_dimensions_sync():
-            try:
-                probe = ffmpeg.probe(video_path)
-                video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
-                
-                if video_stream:
-                    width = int(video_stream.get('width', 0))
-                    height = int(video_stream.get('height', 0))
-                    return width, height
-                return 0, 0
-            except Exception as e:
-                logger.error(f"Error getting video dimensions: {e}")
-                return 0, 0
-        
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, get_dimensions_sync)
-    except Exception as e:
-        logger.error(f"Error in get_video_dimensions: {e}")
-        return 0, 0
-
-# Enhanced get_video_info function to replace the existing one
-async def get_video_info(video_path):
-    """Get comprehensive video information"""
-    try:
-        def get_info_sync():
-            try:
-                probe = ffmpeg.probe(video_path)
-                video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
-                
-                if video_stream:
-                    width = int(video_stream.get('width', 0))
-                    height = int(video_stream.get('height', 0))
-                    duration = int(float(video_stream.get('duration', 0)))
-                    return duration, width, height
-                return 0, 0, 0
-            except Exception as e:
-                logger.error(f"Error getting video info: {e}")
-                return 0, 0, 0
-        
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, get_info_sync)
-    except Exception as e:
-        logger.error(f"Error in get_video_info: {e}")
-        return 0, 0, 0
-
+        logger.error(f"Cleanup error: {e}")        
 
 # Add these imports
 from aiohttp import web
