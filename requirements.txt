@@ -1,0 +1,14 @@
+git+https://github.com/Hrishi2861/pyrofork-2.2.11-peer-fix.git
+requests
+python-dotenv
+pytz
+tgcrypto
+pyrogram
+pymongo
+psutil
+aiohttp
+ffmpeg-python  # Python wrapper for FFmpeg
+imageio[ffmpeg]  # FFmpeg plugin for imageio (if needed for video processing)
+brotli
+speedtest-cli
+aiofiles
