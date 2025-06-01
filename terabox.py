@@ -1,4 +1,4 @@
-from aria2p import API as Aria2API, Client as Aria2Client
+# from aria2p import API as Aria2API, Client as Aria2Client
 import asyncio
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
